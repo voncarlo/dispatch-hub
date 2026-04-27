@@ -10,7 +10,7 @@ import { Clock, AlertTriangle, Download, BookmarkPlus, Save, Upload } from "luci
 import { toast } from "sonner";
 import { useDsp } from "@/context/DspContext";
 import { loadModuleState, saveModuleState } from "@/lib/moduleState";
-import { buildAdpRowsFromNames, buildDefaultAdpRows, formatVariance, mergeAdpPunchData, parseAdpCsvFiles, saveUserReport, type AdpRow, type AssignmentRow } from "@/lib/dispatchWorkflow";
+import { buildAdpRowsFromNames, buildDefaultAdpRows, formatVariance, mergeAdpPunchData, parseAdpCsvFiles, saveUserReport, loadAssignmentsForDsp, type AdpRow } from "@/lib/dispatchWorkflow";
 
 const MODULE_CODE = "adp_punches";
 const STATE_KEY = "rows";
@@ -41,8 +41,8 @@ export function AdpPunches() {
           return;
         }
 
-        const assignments = await loadModuleState<AssignmentRow[]>(activeDsp.id, "vans_phones_assignment", "current_assignments");
-        setRows(buildDefaultAdpRows(assignments || []));
+        const assignments = await loadAssignmentsForDsp(activeDsp.id);
+        setRows(buildDefaultAdpRows(assignments));
       } catch (error) {
         console.error(error);
         toast.error("Could not load saved ADP punch data");
@@ -64,10 +64,10 @@ export function AdpPunches() {
 
     setReconciling(true);
     try {
-      const assignments = await loadModuleState<AssignmentRow[]>(activeDsp.id, "vans_phones_assignment", "current_assignments");
+      const assignments = await loadAssignmentsForDsp(activeDsp.id);
       const previewRows = driverNames.trim()
-        ? buildAdpRowsFromNames(driverNames, assignments || [])
-        : buildDefaultAdpRows(assignments || []);
+        ? buildAdpRowsFromNames(driverNames, assignments)
+        : buildDefaultAdpRows(assignments);
       const parsedRows = files.length > 0 ? await parseAdpCsvFiles(files) : [];
       if (parsedRows.length > 0) {
         const mergedRows = previewRows.length > 0 ? mergeAdpPunchData(previewRows, parsedRows) : parsedRows;
@@ -93,10 +93,10 @@ export function AdpPunches() {
   const buildPreview = async () => {
     if (!activeDsp) return;
     try {
-      const assignments = await loadModuleState<AssignmentRow[]>(activeDsp.id, "vans_phones_assignment", "current_assignments");
+      const assignments = await loadAssignmentsForDsp(activeDsp.id);
       const previewRows = driverNames.trim()
-        ? buildAdpRowsFromNames(driverNames, assignments || [])
-        : buildDefaultAdpRows(assignments || []);
+        ? buildAdpRowsFromNames(driverNames, assignments)
+        : buildDefaultAdpRows(assignments);
       setRows(previewRows);
       toast.success(`Built preview for ${previewRows.length} drivers`);
     } catch (error) {

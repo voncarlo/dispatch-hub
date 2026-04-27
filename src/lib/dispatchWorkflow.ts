@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { formatPhoneValue, normalizeLegacyAssociates, normalizeLegacyVehicles, type LegacyAssociateRow, type LegacyPhoneListEntry, type LegacyVehicleRow } from "@/lib/legacyDispatch";
 import type { Json } from "@/integrations/supabase/types";
+import { loadModuleState } from "@/lib/moduleState";
 
 export type AssignmentRow = {
   id: string;
@@ -141,6 +142,14 @@ export async function loadLegacyDispatchDataset(dspId: string): Promise<LegacyDi
       mobilePhone: entry.mobile_phone,
     })),
   };
+}
+
+export async function loadAssignmentsForDsp(dspId: string) {
+  const savedAssignments = await loadModuleState<AssignmentRow[]>(dspId, "vans_phones_assignment", "current_assignments");
+  if (savedAssignments && savedAssignments.length > 0) return savedAssignments;
+
+  const dataset = await loadLegacyDispatchDataset(dspId);
+  return buildDefaultAssignments(dataset);
 }
 
 export function buildDefaultAssignments(dataset: LegacyDispatchDataset): AssignmentRow[] {

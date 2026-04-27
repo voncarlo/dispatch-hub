@@ -1,47 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Download, Search, Save, Phone } from "lucide-react";
-import { FilterBar, FilterField, EmptyState, SectionTitle } from "./_shared";
+import { Download, Phone, RotateCcw, Save, Search, Upload } from "lucide-react";
+import { EmptyState, SectionTitle } from "./_shared";
 import { useDsp } from "@/context/DspContext";
 import { supabase } from "@/integrations/supabase/client";
 import { formatPhoneValue, getLegacyDspKey, type LegacyPhoneListEntry } from "@/lib/legacyDispatch";
 import { toast } from "sonner";
 
-type DraftEntry = {
-  label: string;
-  lastName: string;
-  workPhone: string;
-  homePhone: string;
-  mobilePhone: string;
-};
-
-const EMPTY_DRAFT: DraftEntry = {
-  label: "",
-  lastName: "",
-  workPhone: "",
-  homePhone: "",
-  mobilePhone: "",
-};
+const DRIVER_STORAGE_PREFIX = "dispatch_hub_driver_extract";
 
 export function PhoneList() {
   const { activeDsp } = useDsp();
   const [list, setList] = useState<LegacyPhoneListEntry[]>([]);
+  const [originalList, setOriginalList] = useState<LegacyPhoneListEntry[]>([]);
   const [filter, setFilter] = useState("");
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<DraftEntry>(EMPTY_DRAFT);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [extractedDrivers, setExtractedDrivers] = useState<Array<{ name?: string }>>([]);
 
   useEffect(() => {
     const load = async () => {
-      if (!activeDsp) return;
-      const legacyKey = getLegacyDspKey(activeDsp);
-      if (!legacyKey) {
+      if (!activeDsp || !getLegacyDspKey(activeDsp)) {
         setList([]);
+        setOriginalList([]);
+        setExtractedDrivers([]);
         return;
       }
 
@@ -55,46 +40,56 @@ export function PhoneList() {
       setLoading(false);
       if (error) {
         setList([]);
+        setOriginalList([]);
         toast.error(`Could not load the ${activeDsp.name} phone list`);
         return;
       }
 
-      setList((data || []).map((entry) => ({
+      const normalized = (data || []).map((entry) => ({
         id: entry.id,
         label: entry.label,
         lastName: entry.last_name,
         workPhone: entry.work_phone,
         homePhone: entry.home_phone,
         mobilePhone: entry.mobile_phone,
-      })));
+      }));
+
+      setList(normalized);
+      setOriginalList(normalized);
+      setExtractedDrivers(loadExtractedDrivers(activeDsp.id));
     };
 
     void load();
   }, [activeDsp]);
 
-  const filtered = list.filter((entry) =>
-    [
-      entry.label,
-      entry.lastName,
-      entry.workPhone,
-      entry.homePhone,
-      entry.mobilePhone,
-    ].join(" ").toLowerCase().includes(filter.toLowerCase())
+  const matchedRows = useMemo(() => list.map((entry, index) => {
+    const assignedName = extractedDrivers[index]?.name || "";
+    const phone = entry.workPhone || entry.homePhone || entry.mobilePhone || "";
+    return {
+      ...entry,
+      assignedName,
+      phone,
+      status: assignedName ? "Matched" : "Open",
+    };
+  }), [extractedDrivers, list]);
+
+  const filtered = matchedRows.filter((entry) =>
+    [entry.label, entry.assignedName, entry.phone, entry.status]
+      .join(" ")
+      .toLowerCase()
+      .includes(filter.toLowerCase())
   );
 
-  const updateEntry = (id: string, key: keyof DraftEntry, value: string) => {
-    setList((current) => current.map((entry) => (entry.id === id ? { ...entry, [key]: value } : entry)));
+  const updateEntry = (id: string, value: string) => {
+    setList((current) => current.map((entry) => (
+      entry.id === id
+        ? { ...entry, workPhone: value }
+        : entry
+    )));
   };
 
-  const add = () => {
-    if (!draft.label.trim()) return;
-    setList((current) => [...current, { id: crypto.randomUUID(), ...draft }]);
-    setDraft(EMPTY_DRAFT);
-    setOpen(false);
-  };
-
-  const remove = (id: string) => {
-    setList((current) => current.filter((entry) => entry.id !== id));
+  const resetPhoneList = () => {
+    setList(originalList);
   };
 
   const save = async () => {
@@ -133,9 +128,9 @@ export function PhoneList() {
   };
 
   const exportCsv = () => {
-    const header = "Label,Last Name,Work Phone,Home Phone,Mobile Phone\n";
+    const header = "Label / Slot,Assigned Name,Phone,Status\n";
     const body = filtered
-      .map((entry) => [entry.label, entry.lastName, entry.workPhone, entry.homePhone, entry.mobilePhone].map(csvEscape).join(","))
+      .map((entry) => [entry.label, entry.assignedName, entry.phone, entry.status].map(csvEscape).join(","))
       .join("\n");
     const blob = new Blob([header + body], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -159,12 +154,12 @@ export function PhoneList() {
   return (
     <div className="space-y-6">
       <SectionTitle
-        title={`${activeDsp.name} phone list`}
-        subtitle="This module is now backed by the transferred legacy dispatch phone-list records for this DSP."
+        title="Phone list"
+        subtitle="This panel now follows the legacy phone-list layout by matching extracted drivers to phone slots and showing assignment status."
         action={
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
-              <Download className="mr-2 h-3.5 w-3.5" />Export CSV
+              <Download className="mr-2 h-3.5 w-3.5" />Export Phone List
             </Button>
             <Button size="sm" onClick={save} disabled={saving || loading}>
               <Save className="mr-2 h-3.5 w-3.5" />{saving ? "Saving..." : "Save"}
@@ -173,82 +168,88 @@ export function PhoneList() {
         }
       />
 
-      <FilterBar>
-        <FilterField label="Search">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input className="w-72 pl-8" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Label, last name, or phone…" />
+      <Card className="surface-card">
+        <CardContent className="space-y-4 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Phone List - match drivers from extracted data</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" disabled>
+                <Upload className="mr-2 h-3.5 w-3.5" />Upload Updated Phone List
+              </Button>
+              <Button variant="outline" size="sm" onClick={resetPhoneList}>
+                <RotateCcw className="mr-2 h-3.5 w-3.5" />Reset
+              </Button>
+            </div>
           </div>
-        </FilterField>
-        <div className="ml-auto">
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm"><Plus className="mr-2 h-3.5 w-3.5" />Add Entry</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add phone list entry</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <Field label="Label" value={draft.label} onChange={(value) => setDraft((current) => ({ ...current, label: value }))} />
-                <Field label="Last Name" value={draft.lastName} onChange={(value) => setDraft((current) => ({ ...current, lastName: value }))} />
-                <Field label="Work Phone" value={draft.workPhone} onChange={(value) => setDraft((current) => ({ ...current, workPhone: value }))} />
-                <Field label="Home Phone" value={draft.homePhone} onChange={(value) => setDraft((current) => ({ ...current, homePhone: value }))} />
-                <Field label="Mobile Phone" value={draft.mobilePhone} onChange={(value) => setDraft((current) => ({ ...current, mobilePhone: value }))} />
-              </div>
-              <DialogFooter><Button onClick={add}>Add Entry</Button></DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </FilterBar>
 
-      <div className="overflow-hidden rounded-md border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Label</TableHead>
-              <TableHead>Last Name</TableHead>
-              <TableHead>Work</TableHead>
-              <TableHead>Home</TableHead>
-              <TableHead>Mobile</TableHead>
-              <TableHead className="w-12" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">Loading transferred phone-list data…</TableCell>
-              </TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">No phone-list entries match this search.</TableCell>
-              </TableRow>
-            ) : filtered.map((entry) => (
-              <TableRow key={entry.id}>
-                <TableCell><Input value={entry.label} onChange={(e) => updateEntry(entry.id, "label", e.target.value)} /></TableCell>
-                <TableCell><Input value={entry.lastName} onChange={(e) => updateEntry(entry.id, "lastName", e.target.value)} /></TableCell>
-                <TableCell><Input value={entry.workPhone} onChange={(e) => updateEntry(entry.id, "workPhone", e.target.value)} placeholder={formatPhoneValue(entry.workPhone)} /></TableCell>
-                <TableCell><Input value={entry.homePhone} onChange={(e) => updateEntry(entry.id, "homePhone", e.target.value)} placeholder={formatPhoneValue(entry.homePhone)} /></TableCell>
-                <TableCell><Input value={entry.mobilePhone} onChange={(e) => updateEntry(entry.id, "mobilePhone", e.target.value)} placeholder={formatPhoneValue(entry.mobilePhone)} /></TableCell>
-                <TableCell>
-                  <Button variant="ghost" size="icon" onClick={() => remove(entry.id)}>
-                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+          <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+            {extractedDrivers.length > 0
+              ? `${Math.min(extractedDrivers.length, list.length)} of ${list.length} phone slots are currently matched from the extracted driver data.`
+              : "No extracted driver data found yet. Run Driver Data Extractor first to populate matched names here."}
+          </div>
+
+          <div className="relative max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input className="pl-8" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search label, driver, or phone..." />
+          </div>
+
+          <div className="overflow-hidden rounded-md border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Label / Slot</TableHead>
+                  <TableHead>Assigned Name</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">Loading transferred phone-list data...</TableCell>
+                  </TableRow>
+                ) : filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">No phone-list entries match this search.</TableCell>
+                  </TableRow>
+                ) : filtered.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell className="font-medium">{entry.label || "—"}</TableCell>
+                    <TableCell>{entry.assignedName || "Unassigned"}</TableCell>
+                    <TableCell>
+                      <Input
+                        value={entry.workPhone}
+                        onChange={(e) => updateEntry(entry.id, e.target.value)}
+                        placeholder={formatPhoneValue(entry.phone)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${entry.status === "Matched" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+                        {entry.status}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} />
-    </div>
-  );
+function loadExtractedDrivers(dspId: string | undefined) {
+  if (!dspId) return [];
+  try {
+    const raw = localStorage.getItem(`${DRIVER_STORAGE_PREFIX}:${dspId}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function csvEscape(value: string) {
