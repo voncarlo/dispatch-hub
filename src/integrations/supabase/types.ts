@@ -126,6 +126,47 @@ export type Database = {
           },
         ]
       }
+      module_states: {
+        Row: {
+          created_at: string
+          dsp_id: string | null
+          id: string
+          module_code: string
+          state_key: string
+          state_payload: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dsp_id?: string | null
+          id?: string
+          module_code: string
+          state_key: string
+          state_payload?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dsp_id?: string | null
+          id?: string
+          module_code?: string
+          state_key?: string
+          state_payload?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "module_states_dsp_id_fkey"
+            columns: ["dsp_id"]
+            isOneToOne: false
+            referencedRelation: "dsps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       modules: {
         Row: {
           code: string
