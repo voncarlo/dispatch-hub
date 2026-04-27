@@ -29,7 +29,8 @@ This repo is configured for Railway with [railway.json](/c:/Users/Main User/Desk
 
 Railway should work with:
 
-- Build command: `npm ci && npm run build`
+- Node runtime: `20`
+- Install/build flow: Nixpacks reads `nixpacks.toml`, runs `npm install`, then `npm run build`
 - Start command: `npm run start`
 
 Set these Railway environment variables:
