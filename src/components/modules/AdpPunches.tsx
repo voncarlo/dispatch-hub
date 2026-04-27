@@ -2,21 +2,25 @@ import { useEffect, useState } from "react";
 import { FileDropZone, FileChip, EmptyState, FilterBar, FilterField, SectionTitle } from "./_shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Clock, AlertTriangle, Download, BookmarkPlus, Save } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Clock, AlertTriangle, Download, BookmarkPlus, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useDsp } from "@/context/DspContext";
 import { loadModuleState, saveModuleState } from "@/lib/moduleState";
-import { buildDefaultAdpRows, formatVariance, parseAdpCsvFiles, saveUserReport, type AdpRow, type AssignmentRow } from "@/lib/dispatchWorkflow";
+import { buildAdpRowsFromNames, buildDefaultAdpRows, formatVariance, mergeAdpPunchData, parseAdpCsvFiles, saveUserReport, type AdpRow, type AssignmentRow } from "@/lib/dispatchWorkflow";
 
 const MODULE_CODE = "adp_punches";
 const STATE_KEY = "rows";
+const NAMES_STATE_KEY = "driver_names";
 
 export function AdpPunches() {
   const { activeDsp } = useDsp();
   const [files, setFiles] = useState<File[]>([]);
   const [rows, setRows] = useState<AdpRow[]>([]);
+  const [driverNames, setDriverNames] = useState("");
   const [filter, setFilter] = useState("");
   const [saving, setSaving] = useState(false);
   const [reconciling, setReconciling] = useState(false);
@@ -30,6 +34,8 @@ export function AdpPunches() {
 
       try {
         const savedRows = await loadModuleState<AdpRow[]>(activeDsp.id, MODULE_CODE, STATE_KEY);
+        const savedNames = await loadModuleState<string>(activeDsp.id, MODULE_CODE, NAMES_STATE_KEY);
+        setDriverNames(savedNames || "");
         if (savedRows && savedRows.length > 0) {
           setRows(savedRows);
           return;
@@ -58,17 +64,20 @@ export function AdpPunches() {
 
     setReconciling(true);
     try {
+      const assignments = await loadModuleState<AssignmentRow[]>(activeDsp.id, "vans_phones_assignment", "current_assignments");
+      const previewRows = driverNames.trim()
+        ? buildAdpRowsFromNames(driverNames, assignments || [])
+        : buildDefaultAdpRows(assignments || []);
       const parsedRows = files.length > 0 ? await parseAdpCsvFiles(files) : [];
       if (parsedRows.length > 0) {
-        setRows(parsedRows);
-        toast.success(`Imported ${parsedRows.length} punch rows from ADP export`);
+        const mergedRows = previewRows.length > 0 ? mergeAdpPunchData(previewRows, parsedRows) : parsedRows;
+        setRows(mergedRows);
+        toast.success(`Imported ${parsedRows.length} punch rows from the timecard export`);
         return;
       }
 
-      const assignments = await loadModuleState<AssignmentRow[]>(activeDsp.id, "vans_phones_assignment", "current_assignments");
-      const fallbackRows = buildDefaultAdpRows(assignments || []);
-      setRows(fallbackRows);
-      toast.success("Built punch reconciliation rows from the saved route sheet");
+      setRows(previewRows);
+      toast.success("Built the ADP preview from the driver-name list");
     } catch (error) {
       console.error(error);
       toast.error("Could not reconcile ADP punches");
@@ -81,11 +90,27 @@ export function AdpPunches() {
     setRows((current) => current.map((row) => (row.id === id ? { ...row, [key]: value } : row)));
   };
 
+  const buildPreview = async () => {
+    if (!activeDsp) return;
+    try {
+      const assignments = await loadModuleState<AssignmentRow[]>(activeDsp.id, "vans_phones_assignment", "current_assignments");
+      const previewRows = driverNames.trim()
+        ? buildAdpRowsFromNames(driverNames, assignments || [])
+        : buildDefaultAdpRows(assignments || []);
+      setRows(previewRows);
+      toast.success(`Built preview for ${previewRows.length} drivers`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not build ADP preview");
+    }
+  };
+
   const persist = async () => {
     if (!activeDsp) return;
     setSaving(true);
     try {
       await saveModuleState(activeDsp.id, MODULE_CODE, STATE_KEY, rows);
+      await saveModuleState(activeDsp.id, MODULE_CODE, NAMES_STATE_KEY, driverNames);
       toast.success("ADP punch workflow saved");
     } catch (error) {
       console.error(error);
@@ -96,7 +121,7 @@ export function AdpPunches() {
   };
 
   const exportCsv = () => {
-    const header = "Driver,Route,Scheduled Start,Scheduled End,Punch In,Punch Out,Variance,Notes\n";
+    const header = "Driver,Route,Scheduled Start,Scheduled End,Clock In,Lunch In,Lunch Out,Clock Out,Variance,Notes\n";
     const body = filtered
       .map((row) =>
         [
@@ -105,6 +130,8 @@ export function AdpPunches() {
           row.scheduledStart,
           row.scheduledEnd,
           row.punchIn,
+          row.lunchIn,
+          row.lunchOut,
           row.punchOut,
           formatVariance(row.scheduledStart, row.punchIn),
           row.notes,
@@ -128,6 +155,7 @@ export function AdpPunches() {
         MODULE_CODE,
         activeDsp.id,
         {
+          driverNames,
           rows: filtered.map((row) => ({
             ...row,
             variance: formatVariance(row.scheduledStart, row.punchIn),
@@ -144,8 +172,8 @@ export function AdpPunches() {
   return (
     <div className="space-y-6">
       <SectionTitle
-        title="Upload ADP punch export"
-        subtitle="CSV exports are imported when the headers match. If no file is uploaded, this tab builds a manual reconciliation sheet from the route-sheet assignments."
+        title="ADP punches"
+        subtitle="Paste driver names, build the preview, then upload the ADP timecard report to populate clock-in and meal-punch fields like the legacy dispatch tool."
         action={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
@@ -161,24 +189,71 @@ export function AdpPunches() {
         }
       />
 
-      <FileDropZone accept=".csv" multiple onFiles={(nextFiles) => setFiles((current) => [...current, ...nextFiles])} hint="CSV only" />
-      <div className="flex flex-wrap gap-2">
-        {files.map((file, index) => (
-          <FileChip key={`${file.name}-${index}`} file={file} onRemove={() => setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index))} />
-        ))}
-      </div>
+      <div className="grid gap-4 xl:grid-cols-[0.92fr_1.4fr]">
+        <Card className="surface-card">
+          <CardContent className="space-y-4 p-5">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Dispatch Report</p>
+              <h3 className="mt-1 text-lg font-semibold">Build the Preview</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Start with the DA list, then bring in the timecard export to fill the preview with clock-in, lunch-in, lunch-out, and clock-out values.
+              </p>
+            </div>
 
-      <FilterBar>
-        <FilterField label="Search">
-          <Input className="w-72" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Driver, route, time..." />
-        </FilterField>
-        <div className="ml-auto flex items-center gap-2">
-          <Badge variant="secondary">{rows.length} rows</Badge>
-          <Button onClick={reconcile} disabled={reconciling}>
-            <Clock className="mr-2 h-4 w-4" />{reconciling ? "Reconciling..." : "Reconcile Punches"}
-          </Button>
-        </div>
-      </FilterBar>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Driver Names</label>
+              <Textarea
+                rows={8}
+                value={driverNames}
+                onChange={(event) => setDriverNames(event.target.value)}
+                placeholder={"Paste one driver per line\nJames Mancini\nJames Mancini RA Shannon"}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Button onClick={buildPreview}>
+                Build Preview
+              </Button>
+              <div className="rounded-lg border border-dashed border-border p-3">
+                <FileDropZone accept=".csv" multiple onFiles={(nextFiles) => setFiles((current) => [...current, ...nextFiles])} hint="Upload ADP CSV export(s)" />
+              </div>
+              <Button variant="outline" onClick={reconcile} disabled={reconciling}>
+                <Upload className="mr-2 h-4 w-4" />{reconciling ? "Importing..." : "Upload Timecard Report"}
+              </Button>
+            </div>
+
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <p>{files.length > 0 ? `${files.length} file(s) selected` : "No timecard report uploaded yet."}</p>
+              <div className="flex flex-wrap gap-2">
+                {files.map((file, index) => (
+                  <FileChip key={`${file.name}-${index}`} file={file} onRemove={() => setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index))} />
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="surface-card">
+          <CardContent className="space-y-4 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Preview</p>
+                <h3 className="mt-1 text-lg font-semibold">Extracted Punches</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Review and edit the extracted rows before saving or downloading the report.
+                </p>
+              </div>
+              <Badge variant="secondary">{rows.length} rows</Badge>
+            </div>
+
+            <FilterBar>
+              <FilterField label="Search">
+                <Input className="w-72" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Driver, route, or time..." />
+              </FilterField>
+            </FilterBar>
+          </CardContent>
+        </Card>
+      </div>
 
       {rows.length > 0 ? (
         <div className="overflow-hidden rounded-md border border-border">
@@ -188,8 +263,10 @@ export function AdpPunches() {
                 <TableHead>Driver</TableHead>
                 <TableHead>Route</TableHead>
                 <TableHead>Scheduled</TableHead>
-                <TableHead>Punch In</TableHead>
-                <TableHead>Punch Out</TableHead>
+                <TableHead>Clock In</TableHead>
+                <TableHead>Lunch In</TableHead>
+                <TableHead>Lunch Out</TableHead>
+                <TableHead>Clock Out</TableHead>
                 <TableHead>Variance</TableHead>
                 <TableHead>Notes</TableHead>
               </TableRow>
@@ -203,13 +280,15 @@ export function AdpPunches() {
                   <TableRow key={row.id}>
                     <TableCell className="font-medium">{row.driverName}</TableCell>
                     <TableCell><Input value={row.route} onChange={(event) => update(row.id, "route", event.target.value)} /></TableCell>
-                    <TableCell>
+                  <TableCell>
                       <div className="grid grid-cols-2 gap-2">
                         <Input value={row.scheduledStart} onChange={(event) => update(row.id, "scheduledStart", event.target.value)} placeholder="07:00" />
                         <Input value={row.scheduledEnd} onChange={(event) => update(row.id, "scheduledEnd", event.target.value)} placeholder="17:00" />
                       </div>
                     </TableCell>
                     <TableCell><Input value={row.punchIn} onChange={(event) => update(row.id, "punchIn", event.target.value)} placeholder="06:58" /></TableCell>
+                    <TableCell><Input value={row.lunchIn} onChange={(event) => update(row.id, "lunchIn", event.target.value)} placeholder="13:00" /></TableCell>
+                    <TableCell><Input value={row.lunchOut} onChange={(event) => update(row.id, "lunchOut", event.target.value)} placeholder="13:30" /></TableCell>
                     <TableCell><Input value={row.punchOut} onChange={(event) => update(row.id, "punchOut", event.target.value)} placeholder="17:02" /></TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${healthy ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
@@ -225,7 +304,7 @@ export function AdpPunches() {
           </Table>
         </div>
       ) : (
-        <EmptyState icon={Clock} title="No punches reconciled yet" description="Upload an ADP export or reconcile from the saved route sheet to start working this tab." />
+        <EmptyState icon={Clock} title="No preview rows yet" description="Paste the driver list first, then build the preview or upload a timecard report." />
       )}
     </div>
   );

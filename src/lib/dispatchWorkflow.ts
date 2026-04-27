@@ -3,37 +3,51 @@ import { formatPhoneValue, normalizeLegacyAssociates, normalizeLegacyVehicles, t
 import type { Json } from "@/integrations/supabase/types";
 
 export type AssignmentRow = {
+  id: string;
+  date: string;
+  waveTime: string;
   route: string;
   driverName: string;
+  makeshiftWave: string;
   transporterId: string;
   van: string;
   phoneLabel: string;
   phoneNumber: string;
+  projectedEor: string;
+  packageCount: string;
+  stopCount: string;
+  sumConfirmation: string;
+  signInTime: string;
   notes: string;
 };
 
 export type AdpRow = {
   id: string;
+  order: number;
   driverName: string;
   route: string;
   scheduledStart: string;
   scheduledEnd: string;
   punchIn: string;
+  lunchIn: string;
+  lunchOut: string;
   punchOut: string;
   notes: string;
 };
 
 export type AttendanceRow = {
   id: string;
+  date: string;
   driverName: string;
-  route: string;
-  arrivalTime: string;
-  status: "present" | "late" | "no_show";
+  violation: string;
+  excused: "Yes" | "No";
+  reason: string;
   notes: string;
 };
 
 export type LunchAuditRow = {
   id: string;
+  date: string;
   driverName: string;
   route: string;
   lunchStart: string;
@@ -42,17 +56,16 @@ export type LunchAuditRow = {
 };
 
 export type DvicInspectionRow = {
-  van: string;
+  id: string;
+  dvicType: "Pre-DVIC" | "Post-DVIC";
+  date: string;
   driverName: string;
-  lights: boolean;
-  tires: boolean;
-  brakes: boolean;
-  mirrors: boolean;
-  fluids: boolean;
-  cargoArea: boolean;
-  horn: boolean;
-  emergencyKit: boolean;
-  submitted: boolean;
+  vehicle: string;
+  vin: string;
+  station: string;
+  time: string;
+  mileage: string;
+  result: "Passed" | "Failed" | "Pending";
   notes: string;
 };
 
@@ -66,12 +79,28 @@ export type PaperInspectionRow = {
 };
 
 export type PackageStatusRow = {
+  id: string;
+  name: string;
   route: string;
-  driverName: string;
-  planned: number;
-  delivered: number;
-  returned: number;
-  missing: number;
+  delivered: number | null;
+  total: number | null;
+  remaining: number | null;
+  progressPercent: number | null;
+  stops: string;
+  lastActivity: string;
+  projectedRts: string;
+  pace: string;
+};
+
+export type PackageStatusParseResult = {
+  rows: PackageStatusRow[];
+  stats: {
+    drivers: number;
+    delivered: number;
+    total: number;
+    remaining: number;
+    deliveredPercent: number;
+  };
 };
 
 export type LegacyDispatchDataset = {
@@ -120,17 +149,33 @@ export function buildDefaultAssignments(dataset: LegacyDispatchDataset): Assignm
   const phonePool = dataset.phoneList.filter((entry) => [entry.workPhone, entry.homePhone, entry.mobilePhone].some(Boolean));
   const total = Math.max(associates.length, Math.min(Math.max(vehicles.length, 0), 20));
   const rows = (total > 0 ? associates.slice(0, Math.max(total, associates.length)) : []).slice(0, Math.max(total, 12));
+  const today = new Date().toISOString().slice(0, 10);
+  const wavePattern = [
+    { waveTime: "11:00", makeshiftWave: "10:40" },
+    { waveTime: "11:20", makeshiftWave: "11:00" },
+    { waveTime: "11:40", makeshiftWave: "11:00" },
+  ];
 
   return rows.map((associate, index) => {
     const vehicle = vehicles[index % Math.max(vehicles.length, 1)];
     const phone = phonePool[index % Math.max(phonePool.length, 1)];
+    const wave = wavePattern[index % wavePattern.length];
     return {
+      id: `assignment-${index + 1}`,
+      date: today,
+      waveTime: wave.waveTime,
       route: `R${String(index + 1).padStart(2, "0")}`,
       driverName: cleanDriverName(associate["Name and ID"], index + 1),
+      makeshiftWave: wave.makeshiftWave,
       transporterId: String(associate.TransporterID || ""),
       van: String(vehicle?.vehicleName || ""),
       phoneLabel: String(phone?.label || ""),
       phoneNumber: preferredPhone(phone),
+      projectedEor: "",
+      packageCount: "",
+      stopCount: "",
+      sumConfirmation: "",
+      signInTime: "",
       notes: "",
     };
   });
@@ -138,12 +183,15 @@ export function buildDefaultAssignments(dataset: LegacyDispatchDataset): Assignm
 
 export function buildDefaultAdpRows(assignments: AssignmentRow[]): AdpRow[] {
   return assignments.map((assignment, index) => ({
-    id: `${assignment.route}-${assignment.driverName || index}`,
+    id: `${assignment.id || assignment.route}-${assignment.driverName || index}`,
+    order: index + 1,
     driverName: assignment.driverName,
     route: assignment.route,
-    scheduledStart: "07:00",
-    scheduledEnd: "17:00",
-    punchIn: "",
+    scheduledStart: assignment.signInTime || assignment.makeshiftWave || "",
+    scheduledEnd: assignment.projectedEor || "",
+    punchIn: assignment.signInTime || "",
+    lunchIn: "",
+    lunchOut: "",
     punchOut: "",
     notes: "",
   }));
@@ -151,11 +199,12 @@ export function buildDefaultAdpRows(assignments: AssignmentRow[]): AdpRow[] {
 
 export function buildDefaultAttendanceRows(assignments: AssignmentRow[]): AttendanceRow[] {
   return assignments.map((assignment, index) => ({
-    id: `${assignment.route}-${assignment.driverName || index}`,
+    id: `${assignment.id || assignment.route}-${assignment.driverName || index}`,
+    date: assignment.date || new Date().toISOString().slice(0, 10),
     driverName: assignment.driverName,
-    route: assignment.route,
-    arrivalTime: "",
-    status: "present",
+    violation: "Call out >1hr notice",
+    excused: "No",
+    reason: "",
     notes: "",
   }));
 }
@@ -163,6 +212,7 @@ export function buildDefaultAttendanceRows(assignments: AssignmentRow[]): Attend
 export function buildDefaultLunchRows(assignments: AssignmentRow[]): LunchAuditRow[] {
   return assignments.map((assignment, index) => ({
     id: `${assignment.route}-${assignment.driverName || index}`,
+    date: assignment.date || new Date().toISOString().slice(0, 10),
     driverName: assignment.driverName,
     route: assignment.route,
     lunchStart: "",
@@ -174,18 +224,17 @@ export function buildDefaultLunchRows(assignments: AssignmentRow[]): LunchAuditR
 export function buildDefaultDvicRows(assignments: AssignmentRow[]): DvicInspectionRow[] {
   return assignments
     .filter((assignment) => assignment.van.trim())
-    .map((assignment) => ({
-      van: assignment.van,
+    .map((assignment, index) => ({
+      id: `dvic-${assignment.id || index}`,
+      dvicType: "Pre-DVIC",
+      date: assignment.date || new Date().toISOString().slice(0, 10),
       driverName: assignment.driverName,
-      lights: false,
-      tires: false,
-      brakes: false,
-      mirrors: false,
-      fluids: false,
-      cargoArea: false,
-      horn: false,
-      emergencyKit: false,
-      submitted: false,
+      vehicle: assignment.van,
+      vin: "",
+      station: "WNG1",
+      time: "",
+      mileage: "",
+      result: "Passed",
       notes: "",
     }));
 }
@@ -205,14 +254,23 @@ export function buildDefaultPaperInspectionRows(assignments: AssignmentRow[]): P
 }
 
 export function buildDefaultPackageRows(assignments: AssignmentRow[]): PackageStatusRow[] {
-  return assignments.map((assignment, index) => ({
-    route: assignment.route,
-    driverName: assignment.driverName,
-    planned: 180 + index * 2,
-    delivered: 176 + index * 2,
-    returned: 0,
-    missing: 0,
-  }));
+  return assignments.map((assignment, index) => {
+    const total = 180 + index * 2;
+    const delivered = Math.max(total - 4, 0);
+    return {
+      id: `${assignment.id || assignment.route}-${index}`,
+      name: assignment.driverName,
+      route: assignment.route,
+      delivered,
+      total,
+      remaining: total - delivered,
+      progressPercent: total > 0 ? Math.round((delivered / total) * 100) : null,
+      stops: assignment.stopCount ? `${assignment.stopCount} stops` : "",
+      lastActivity: "",
+      projectedRts: assignment.projectedEor || "",
+      pace: "",
+    };
+  });
 }
 
 export async function saveUserReport(title: string, moduleCode: string, dspId: string | null | undefined, data: Json) {
@@ -251,11 +309,14 @@ export async function parseAdpCsvFiles(files: File[]): Promise<AdpRow[]> {
 
       rows.push({
         id: `${file.name}-${rows.length}`,
+        order: rows.length + 1,
         driverName,
         route: csvValue(line, headers, ["route", "route id", "route code"]),
         scheduledStart: csvValue(line, headers, ["scheduled start", "start", "schedule start"]),
         scheduledEnd: csvValue(line, headers, ["scheduled end", "end", "schedule end"]),
         punchIn: csvValue(line, headers, ["punch in", "in", "clock in"]),
+        lunchIn: csvValue(line, headers, ["lunch in", "meal in", "break out"]),
+        lunchOut: csvValue(line, headers, ["lunch out", "meal out", "break in"]),
         punchOut: csvValue(line, headers, ["punch out", "out", "clock out"]),
         notes: csvValue(line, headers, ["notes", "comment"]),
       });
@@ -263,6 +324,97 @@ export async function parseAdpCsvFiles(files: File[]): Promise<AdpRow[]> {
   }
 
   return rows;
+}
+
+export function buildAdpRowsFromNames(namesText: string, assignments: AssignmentRow[]): AdpRow[] {
+  const names = namesText
+    .split(/\r?\n/)
+    .map((name) => cleanDriverName(name, 0))
+    .filter(Boolean);
+
+  return names.map((driverName, index) => {
+    const assignment = assignments.find((row) => row.driverName.toLowerCase() === driverName.toLowerCase());
+    return {
+      id: `adp-name-${index + 1}`,
+      order: index + 1,
+      driverName,
+      route: assignment?.route || "",
+      scheduledStart: assignment?.signInTime || assignment?.makeshiftWave || "",
+      scheduledEnd: assignment?.projectedEor || "",
+      punchIn: "",
+      lunchIn: "",
+      lunchOut: "",
+      punchOut: "",
+      notes: "",
+    };
+  });
+}
+
+export function mergeAdpPunchData(baseRows: AdpRow[], importedRows: AdpRow[]) {
+  const indexed = new Map(
+    importedRows.map((row) => [canonicalName(row.driverName), row] as const)
+  );
+
+  return baseRows.map((row) => {
+    const imported = indexed.get(canonicalName(row.driverName));
+    if (!imported) return row;
+    return {
+      ...row,
+      route: imported.route || row.route,
+      scheduledStart: imported.scheduledStart || row.scheduledStart,
+      scheduledEnd: imported.scheduledEnd || row.scheduledEnd,
+      punchIn: imported.punchIn || row.punchIn,
+      lunchIn: imported.lunchIn || row.lunchIn,
+      lunchOut: imported.lunchOut || row.lunchOut,
+      punchOut: imported.punchOut || row.punchOut,
+      notes: imported.notes || row.notes,
+    };
+  });
+}
+
+export function parsePackageStatusText(raw: string): PackageStatusParseResult {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && line !== "|");
+
+  const blocks: string[][] = [];
+  let current: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (isLikelyRoute(line)) {
+      if (current.length > 0) blocks.push(current);
+      current = [];
+
+      const previous = lines[index - 1];
+      if (previous && !/\d/.test(previous) && previous.split(" ").length >= 2) {
+        current.push(previous);
+      }
+    }
+    current.push(line);
+  }
+
+  if (current.length > 0) blocks.push(current);
+
+  const rows = blocks
+    .map((block, index) => parsePackageBlock(block, index))
+    .filter((row): row is PackageStatusRow => Boolean(row));
+
+  const delivered = rows.reduce((sum, row) => sum + (row.delivered || 0), 0);
+  const total = rows.reduce((sum, row) => sum + (row.total || 0), 0);
+  const remaining = rows.reduce((sum, row) => sum + (row.remaining || 0), 0);
+
+  return {
+    rows,
+    stats: {
+      drivers: rows.length,
+      delivered,
+      total,
+      remaining,
+      deliveredPercent: total > 0 ? Math.round((delivered / total) * 100) : 0,
+    },
+  };
 }
 
 export function minutesFromTime(value: string): number | null {
@@ -280,6 +432,18 @@ export function formatVariance(scheduledStart: string, punchIn: string): string 
   if (delta <= 5 && delta >= -15) return "OK";
   if (delta > 5) return `+${delta} min late`;
   return `${delta} min early`;
+}
+
+export function formatAttendancePoints(entry: AttendanceRow) {
+  return entry.excused === "Yes" ? 0 : entry.driverName && entry.violation ? 1 : 0;
+}
+
+export function getWeekNumber(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  const start = new Date(date.getFullYear(), 0, 1);
+  const diffDays = Math.floor((date.getTime() - start.getTime()) / 86400000);
+  return Math.floor((diffDays + start.getDay()) / 7) + 1;
 }
 
 export function deriveShiftHours(punchIn: string, punchOut: string): number | null {
@@ -307,6 +471,17 @@ function cleanDriverName(value: string | undefined, index: number) {
   const normalized = String(value || "").trim();
   if (!normalized) return `Driver ${index}`;
   return normalized.replace(/\s+/g, " ");
+}
+
+function canonicalName(value: string) {
+  return cleanDriverName(value, 0)
+    .toLowerCase()
+    .replace(/^\d+[\).\-\s]+/, "")
+    .replace(/\s+ra\b.*$/i, "")
+    .replace(/,/g, " ")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function preferredPhone(entry: LegacyPhoneListEntry | undefined) {
@@ -360,4 +535,72 @@ function parseCsv(text: string) {
   }
 
   return lines;
+}
+
+function isLikelyRoute(value: string) {
+  return /^[A-Z]{1,3}\s?\d+[A-Z]?$/i.test(value);
+}
+
+function parsePackageBlock(block: string[], index: number): PackageStatusRow | null {
+  let name = "";
+  let route = "—";
+  let delivered: number | null = null;
+  let total: number | null = null;
+  let stops = "";
+  let lastActivity = "—";
+  let projectedRts = "—";
+  let pace = "—";
+
+  for (const line of block) {
+    if (isLikelyRoute(line)) {
+      route = line;
+    }
+
+    if (
+      !name &&
+      !/\d/.test(line) &&
+      line.split(" ").length >= 2 &&
+      !/^last:|pace:|projected|stops|deliveries/i.test(line)
+    ) {
+      name = line;
+    }
+
+    const deliveries = line.match(/(\d+)\s*\/\s*(\d+)\s+deliveries/i);
+    if (deliveries) {
+      delivered = Number(deliveries[1]);
+      total = Number(deliveries[2]);
+    }
+
+    const stopMatch = line.match(/(\d+)\s*\/\s*(\d+)\s+stops/i);
+    if (stopMatch) {
+      stops = `${stopMatch[1]}/${stopMatch[2]} stops`;
+    }
+
+    const lastMatch = line.match(/^Last:\s*(.+)/i);
+    if (lastMatch) lastActivity = lastMatch[1].trim();
+
+    const rtsMatch = line.match(/Projected\s+RTS:\s*(.+)/i);
+    if (rtsMatch) projectedRts = rtsMatch[1].trim();
+
+    const paceMatch = line.match(/^Pace:\s*(.+)/i);
+    if (paceMatch) pace = paceMatch[1].trim();
+  }
+
+  if (!name && route === "—" && delivered === null && total === null) return null;
+  const remaining = delivered !== null && total !== null ? Math.max(total - delivered, 0) : null;
+  const progressPercent = delivered !== null && total ? Math.round((delivered / total) * 100) : null;
+
+  return {
+    id: `pkg-${index + 1}`,
+    name: name || "Unknown",
+    route,
+    delivered,
+    total,
+    remaining,
+    progressPercent,
+    stops,
+    lastActivity,
+    projectedRts,
+    pace,
+  };
 }

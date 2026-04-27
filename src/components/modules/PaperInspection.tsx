@@ -88,8 +88,8 @@ export function PaperInspection() {
   return (
     <div className="space-y-6">
       <SectionTitle
-        title="Paper inspection audit"
-        subtitle="This tab now keeps per-van audit status and notes instead of resetting to demo data."
+        title="Paper inspection"
+        subtitle="The legacy HTML kept this panel as an inspection workspace placeholder. This version keeps that same purpose, but adds a simple per-van audit table so the tab stays useful inside the site."
         action={
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={saveReport}>

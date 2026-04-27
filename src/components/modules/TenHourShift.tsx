@@ -53,6 +53,18 @@ export function TenHourShift() {
     return <EmptyState icon={Timer} title="Choose a DSP to monitor 10-hour shift risk" description="Shift-hour monitoring is stored per DSP." />;
   }
 
+  if (activeDsp.code !== "PORTKEY") {
+    return (
+      <div className="space-y-6">
+        <SectionTitle
+          title="10-hour shift indicator"
+          subtitle="In the legacy HTML tool this panel was marked as PortKey-only. The live monitor is therefore limited to that DSP here as well."
+        />
+        <EmptyState icon={Timer} title="PortKey only" description="Switch to the PortKey DSP to use this report." />
+      </div>
+    );
+  }
+
   if (rows.length === 0) {
     return <EmptyState icon={Timer} title="No shift-hour rows yet" description="Save route-sheet or ADP punch data first so this tab can calculate hours worked." />;
   }
@@ -60,8 +72,8 @@ export function TenHourShift() {
   return (
     <div className="space-y-6">
       <SectionTitle
-        title="10-hour shift monitor"
-        subtitle="This tab now reads from saved ADP punch data when available and falls back to the active route sheet."
+        title="10-hour shift indicator"
+        subtitle="This PortKey-only panel uses saved ADP punch data when available and falls back to the active route sheet."
       />
       <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning-foreground">
         <div className="flex items-center gap-2">
