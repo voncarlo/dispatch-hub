@@ -46,25 +46,33 @@ export function DspProvider({ children }: { children: ReactNode }) {
     if (!user) { setLoading(false); return; }
     setLoading(true);
     const { data: dsps } = await supabase.from("dsps").select("*").eq("active", true).order("sort_order");
-    setAllDsps((dsps || []) as Dsp[]);
+    const dspList = (dsps || []) as Dsp[];
+    setAllDsps(dspList);
 
+    let nextAccessibleDspIds = new Set<string>();
     if (isAdmin) {
-      setAccessibleDspIds(new Set((dsps || []).map((d: any) => d.id)));
+      nextAccessibleDspIds = new Set(dspList.map((d) => d.id));
     } else {
       const { data: access } = await supabase.from("user_dsp_access").select("dsp_id").eq("user_id", user.id);
-      setAccessibleDspIds(new Set((access || []).map((a: any) => a.dsp_id)));
+      nextAccessibleDspIds = new Set((access || []).map((a: any) => a.dsp_id));
     }
+    setAccessibleDspIds(nextAccessibleDspIds);
 
     if (!isAdmin) {
       const { data: modAccess } = await supabase.from("user_module_access").select("module_id").eq("user_id", user.id);
       setAccessibleModuleIds(new Set((modAccess || []).map((m: any) => m.module_id)));
     }
 
-    // Restore active DSP
+    // Restore active DSP only if the current user can still access it.
     const stored = localStorage.getItem("tgo_active_dsp");
-    if (stored && dsps) {
-      const found = (dsps as Dsp[]).find((d) => d.id === stored);
-      if (found) setActiveDspState(found);
+    if (stored) {
+      const found = dspList.find((d) => d.id === stored && nextAccessibleDspIds.has(d.id));
+      if (found) {
+        setActiveDspState(found);
+      } else {
+        setActiveDspState(null);
+        localStorage.removeItem("tgo_active_dsp");
+      }
     }
     setLoading(false);
   }, [user, isAdmin]);
