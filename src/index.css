@@ -1,0 +1,213 @@
+@import url("https://fonts.cdnfonts.com/css/sf-pro-display");
+@import url("https://fonts.cdnfonts.com/css/sf-pro-text");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* TGO Dispatch Tool — Design System
+   Brand: #1F1F1F (dark) and #6FBE7A (green)
+   All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --background: 100 20% 98%;
+    --foreground: 0 0% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 12%;
+
+    /* Brand */
+    --primary: 128 38% 59%;          /* #6FBE7A TGO green */
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 128 45% 70%;
+    --primary-deep: 128 42% 38%;
+
+    --brand-dark: 0 0% 12%;          /* #1F1F1F */
+    --brand-dark-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 12%;
+
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 40%;
+
+    --accent: 128 30% 94%;
+    --accent-foreground: 128 42% 28%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 12%;
+
+    --success: 128 45% 42%;
+    --success-foreground: 0 0% 100%;
+
+    --info: 210 90% 50%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 128 38% 50%;
+
+    --radius: 0.875rem;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+    --tracking-display: -0.024em;
+    --tracking-heading: -0.018em;
+    --tracking-body: -0.011em;
+
+    /* Sidebar — Brand dark */
+    --sidebar-background: 0 0% 11%;
+    --sidebar-foreground: 0 0% 88%;
+    --sidebar-primary: 128 38% 59%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 17%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 128 38% 59%;
+
+    /* Gradients & shadows */
+    --gradient-brand: linear-gradient(135deg, hsl(128 42% 38%), hsl(128 38% 59%));
+    --gradient-dark: linear-gradient(180deg, hsl(0 0% 14%), hsl(0 0% 9%));
+    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 100%), hsl(100 20% 97%));
+
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.04);
+    --shadow-md: 0 4px 12px -2px hsl(0 0% 0% / 0.08);
+    --shadow-lg: 0 12px 32px -8px hsl(0 0% 0% / 0.12);
+    --shadow-brand: 0 8px 24px -8px hsl(128 38% 50% / 0.35);
+
+    --transition-base: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 0 0% 8%;
+    --foreground: 0 0% 95%;
+
+    --card: 0 0% 11%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 0 0% 11%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 128 38% 59%;
+    --primary-foreground: 0 0% 8%;
+    --primary-glow: 128 45% 70%;
+    --primary-deep: 128 42% 45%;
+
+    --brand-dark: 0 0% 14%;
+    --brand-dark-foreground: 0 0% 95%;
+
+    --secondary: 0 0% 16%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 64%;
+
+    --accent: 0 0% 16%;
+    --accent-foreground: 128 38% 70%;
+
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 0 0% 12%;
+
+    --success: 128 45% 55%;
+    --success-foreground: 0 0% 8%;
+
+    --info: 210 90% 60%;
+    --info-foreground: 0 0% 8%;
+
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 128 38% 59%;
+
+    --sidebar-background: 0 0% 9%;
+    --sidebar-foreground: 0 0% 88%;
+    --sidebar-primary: 128 38% 59%;
+    --sidebar-primary-foreground: 0 0% 8%;
+    --sidebar-accent: 0 0% 14%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: 128 38% 59%;
+
+    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 11%), hsl(0 0% 8%));
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+  html {
+    font-family: var(--font-sans);
+  }
+  body {
+    font-family: var(--font-sans);
+    letter-spacing: var(--tracking-body);
+    line-height: 1.45;
+    background-image:
+      radial-gradient(circle at top, hsl(0 0% 100% / 0.94), transparent 34%),
+      linear-gradient(180deg, hsl(var(--background)), hsl(100 20% 97%));
+  }
+  #root {
+    min-height: 100vh;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: var(--tracking-heading);
+    line-height: 1.12;
+  }
+  h1 {
+    letter-spacing: var(--tracking-display);
+  }
+  p, label, input, textarea, select, button, table, th, td {
+    font-family: var(--font-sans);
+  }
+  label, th {
+    letter-spacing: -0.01em;
+  }
+  button, input, textarea, select {
+    border-radius: calc(var(--radius) - 0.1rem);
+  }
+}
+
+@layer components {
+  .surface-card {
+    @apply bg-card border border-border rounded-xl shadow-[var(--shadow-sm)];
+  }
+  .surface-elevated {
+    @apply bg-card border border-border rounded-[1.25rem] shadow-[var(--shadow-md)];
+  }
+  .apple-page-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: var(--tracking-display);
+    line-height: 1.04;
+  }
+  .apple-section-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: var(--tracking-heading);
+    line-height: 1.16;
+  }
+  .apple-body {
+    font-family: var(--font-sans);
+    font-weight: 400;
+    letter-spacing: var(--tracking-body);
+    line-height: 1.5;
+  }
+}
